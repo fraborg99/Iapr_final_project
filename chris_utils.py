@@ -20,6 +20,10 @@ from shapely.geometry.polygon import Polygon
 from our_utils import deskew
 
 
+class CouldNotFind4PointApprox(Exception):
+    pass
+
+
 def memoize(func):
     cached = {}
     def wrapper(path_data):
@@ -405,28 +409,34 @@ def get_card_outline(h_img: np.ndarray, verbose: bool = False):
             # get all contours
             fewer_contours = get_card_contours(hey)
 
-            # # get the approximation points of the contours
-            # approxes = []
-            # for c in fewer_contours:
-            #     approxes += [get_four_point_approx(c)]
+            # get the approximation points of the contours
+            even_fewer_contours = []
+            for c in fewer_contours:
 
-            # # check the approximation points
-            # fewer_contours = [c for i, c in enumerate(fewer_contours)
-            #                   if check_four_point_approx(approxes[i])]
+                try:
+                    test_approx = get_four_point_approx(c)
+                    if check_four_point_approx(test_approx, verbose=verbose):
+                        even_fewer_contours += [c]
+
+                except CouldNotFind4PointApprox:
+                    pass
 
             # stop if we've tried too many times
             if i == 12:
                 break
 
-        if len(fewer_contours):
+        if len(even_fewer_contours):
             try_next_limit = False
+
+        if verbose:
+            print('DONE!')
         
         limit += 0.01
 
         if limit > 0.3:
             raise Exception
 
-    card_outline = fewer_contours[get_closest_contour(hey, fewer_contours)]
+    card_outline = even_fewer_contours[get_closest_contour(hey, even_fewer_contours)]
 
     return card_outline, hey
 
@@ -438,28 +448,30 @@ def get_four_point_approx(card_outline: np.ndarray):
     approx = []
     while len(approx) != 4:
         if multiple > 0.1:
-            raise Exception
+            raise CouldNotFind4PointApprox
         approx = get_approx(card_outline, multiple)
         multiple += 0.0025
     return approx
 
-# def check_four_point_approx(approx: np.ndarray):
-#     """
-#     Check that the four point approximation is approximately the correct shape
-#     """
-#     right_points, left_points = separate_left_and_right_points(approx)
+def check_four_point_approx(approx: np.ndarray, verbose: bool = False):
+    """
+    Check that the four point approximation is the correct shape
+    """
+    right_points, left_points = separate_left_and_right_points(approx)
 
-#     # print('right points:', right_points)
-#     # print('left points:', left_points)
+    if verbose:
+        print('right points:', right_points)
+        print('left points:', left_points)
 
-#     for a, b in zip(right_points, left_points):
-#         if not abs(np.linalg.norm(a.ravel() - b.ravel()) - 800) < 100:
-#             print('falsity!')
-#             print(a.ravel())
-#             print(b.ravel())
-#             print(np.linalg.norm(a.ravel() - b.ravel()))
-#             return False
-#     return True
+    for a, b in [right_points, left_points]:
+        if not abs(np.linalg.norm(a.ravel() - b.ravel()) - 625) < 25:
+            if verbose:
+                print('falsity!')
+                print(a.ravel())
+                print(b.ravel())
+                print(np.linalg.norm(a.ravel() - b.ravel()))
+            return False
+    return True
 
 
 def get_individual_outlines(card_outline: np.ndarray, approx: np.ndarray):

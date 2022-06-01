@@ -122,7 +122,7 @@ def deskew(im, calibration = False):
     if calibration:
         file2 = os.path.join("data/train/train_21.jpg")
         im2 = skimage.io.imread(file2)
-        newimage = e.match_histograms(im2, im, channel_axis=-1)
+        newimage = e.match_histograms(im, im2, channel_axis=-1)
         im = newimage
     try:
         hull, edges, contours = plot(im)

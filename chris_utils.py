@@ -727,7 +727,8 @@ def segment_cards(imgs: np.ndarray, h_imgs: np.ndarray, make_plot: bool = True, 
             # plot contour and polygon
             ax[j, 1].imshow(hey, cmap='gray')
 
-            for card, app in zip(card_outline, approx):
+            for card, app in zip(card_outline if isinstance(card_outline, list) else [card_outline],
+                                 approx if isinstance(approx, list) else [approx]):
                 ax[j, 1].plot(card[:, :, 1].ravel(), card[:, :, 0].ravel(), 'r-', lw=5)
                 ax[j, 1].plot(app[:, :, 1], app[:, :, 0], 'c*', ms=30)
 

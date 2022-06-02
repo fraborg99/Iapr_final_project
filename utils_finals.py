@@ -1762,7 +1762,7 @@ def predict(image):
 
     for key, num, suit in zip(keys, nums, suits):
         if key.startwith('P') and int(key[1] not in players):
-            prediction_key = 0
+            prediction[key] = 0
         else:
             str_number = {
                 1: 'A', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7',

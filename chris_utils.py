@@ -1302,9 +1302,9 @@ def match_number_and_suit(card: np.ndarray, numbers: dict, suits: dict, make_plo
         if match > best_match:
             best_match = match
             best_suit = k
-            
+    
     if best_number in [11, 2]:
-        if (number_im[:25, :10] == 1).sum() < 10:
+        if (number_im[:25, :10] == 1).sum() > 25 * 10 - 10:
             best_number = 11
         else:
             best_number = 2
@@ -1321,13 +1321,17 @@ def match_number_and_suit(card: np.ndarray, numbers: dict, suits: dict, make_plo
     return best_number, best_suit
 
 def get_numbers_and_suits(card_outlines: List[np.ndarray], imgs: List[np.ndarray], real_numbers: dict,
-                          real_suits: dict, make_plot: bool = True, table_cards: bool = False):
+                          real_suits: dict, make_plot: bool = True):
 
     cards = []
     boxes, rects = get_boxes_and_rectangles(card_outlines)
     for i, (rect, box) in enumerate(zip(rects, boxes)):
+
+        num_players = len(imgs) - 5
+        table_card = i >= num_players*2
+
         if len(box):
-            img = imgs[0] if table_cards else imgs[i // 2]
+            img = imgs[i - num_players] if table_card else imgs[i // 2]
             warped = warp_card(rect, box, img)
             cards += [gaussian(straighten_card(warped))]
         else:

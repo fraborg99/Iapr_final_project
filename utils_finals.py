@@ -1,27 +1,176 @@
+# +
 from this import d
 from turtle import left
-from typing import List, Union, Tuple
-import os
 import time
-from copy import copy
 
+
+from typing import List, Union
+import os
+from copy import copy
 import numpy as np
+import matplotlib.pyplot as plt
+
 from scipy.fft import fft
 from scipy.interpolate import interp1d
-import matplotlib.pyplot as plt
+
+import skimage
 from skimage.transform import rotate, resize
 from skimage.morphology import binary_erosion, dilation, opening, closing, disk, binary_closing
 from skimage.color import rgb2gray, rgb2hsv
 from skimage.filters import median, gaussian
 from skimage.measure import find_contours
 from skimage.exposure import match_histograms
+import skimage.exposure as e
+
 from IPython.display import Image, display, clear_output
+
 import cv2
 import PIL.Image
+
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 
-from our_utils import deskew
+
+# -
+
+# function to select from an array of points delimiting a shape, those corresponding to the corners
+def corners(lis, im):
+    height = im.shape[0]
+    width = im.shape[1]
+    n = len(lis)
+    corners = []
+    if np.abs(lis[0][0][1] - lis[1][0][0]) > np.abs(lis[0][0][1] - lis[1][0][0]):
+        old_axis = "x"
+    else:
+        old_axis = "y"
+    for i in range(len(lis)+1):
+        if np.abs(lis[(i+1)%n][0][0] - lis[i%n][0][0]) > np.abs(lis[(i+1)%n][0][1] - lis[i%n][0][1]):
+            current_axis = "x"
+        else:
+            current_axis = "y"
+        if current_axis != old_axis:
+            old_axis = current_axis
+            corners.append(lis[i%n][0][:])
+            continue
+    corners = np.array(corners)
+
+    while len(corners)>4:
+
+        right = list(map(lambda x: x[0] > width//2, corners))
+        if len(np.array(corners)[right]) != 2:
+            rem = np.argmin([x[0] for x in np.array(corners)[right]])
+            corners = np.delete(corners, rem, axis = 0)
+
+        left = list(map(lambda x: x[0] <= width//2, corners))
+        if len(np.array(corners)[left]) != 2:
+            rem = np.argmax([x[0] for x in np.array(corners)[left]])
+            corners = np.delete(corners, rem, axis = 0)
+
+        up = list(map(lambda x: x[1] > height//2, corners))
+        if len(np.array(corners)[up]) != 2:
+            rem = np.argmin([x[1] for x in np.array(corners)[up]])
+            corners = np.delete(corners, rem, axis = 0)
+
+        down = list(map(lambda x: x[1] <= height//2, corners))
+        if len(np.array(corners)[down]) != 2:
+            rem = np.argmax([x[1] for x in np.array(corners)[down]])
+            corners = np.delete(corners, rem, axis = 0)
+
+    return corners
+
+
+def plot(im):
+    ## add some whithe pixels above and below the make the table more recognizable in case of decentered picutres
+    im = np.vstack([np.zeros((100,6000,3)), im, np.zeros((100,6000,3))])
+    im = im.astype(np.uint8)
+
+    width = im.shape[1]
+    height = im.shape[0]
+
+    # go to gray color and apply a gaussian blur filter
+    img_gray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
+    img_gray = cv2.GaussianBlur(img_gray, (21, 21), 1)
+
+    # obtain a binary image
+    ret, thresh = cv2.threshold(img_gray, 170, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    # define the filter that will be used for opening, dialtion and erosion
+    kernelop = np.ones((80,80),np.uint8)
+    kerneldil = np.ones((90,90),np.uint8)
+    kernelder = np.ones((30,30),np.uint8)
+
+    # apply opening, dialtion and erosion
+    image = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernelop)
+    image = cv2.dilate(image,kerneldil,iterations = 1)
+    image = cv2.erode(image ,kernelder,iterations = 5)
+    edges = cv2.Canny(image, 50, 150, apertureSize=3)
+
+    # find the contours and select that one which has points that are both in the lowoer left and upper right corners, it
+    # will be the table's contour
+    contours, hierarchy = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    for i in range(len(contours)):
+        current_contour = contours[i]
+        current_contour = current_contour.reshape(len(current_contour), 2)
+        if (np.any([j[0]>(width*2/3) and j[1]<(height/4) for j in current_contour]) and np.any([j[0]<(width/3) and j[1]>(height*3/4) for j in current_contour])):
+
+            max_c = i
+            break
+
+    # apply convex hull
+    hull = cv2.convexHull(contours[max_c])
+
+    return hull, edges, contours
+
+
+def cyclic_intersection_pts(pts):
+#    Sorts 4 points in clockwise direction to enable the rest of the code to stretch the correct dimensions"
+    if pts.shape[0] != 4:
+        return None
+
+    # Calculate the center
+    center = np.mean(pts, axis=0)
+
+    # Sort the points in clockwise
+    cyclic_pts = [
+        pts[np.where(np.logical_and(pts[:, 0] < center[0], pts[:, 1] < center[1]))[0][0], :], # Top-left
+        pts[np.where(np.logical_and(pts[:, 0] > center[0], pts[:, 1] < center[1]))[0][0], :], # Top-right
+        pts[np.where(np.logical_and(pts[:, 0] > center[0], pts[:, 1] > center[1]))[0][0], :], # Bottom-Right
+        pts[np.where(np.logical_and(pts[:, 0] < center[0], pts[:, 1] > center[1]))[0][0], :]  # Bottom-Left
+    ]
+
+    return np.array(cyclic_pts)
+
+
+def deskew(im, calibration = False):
+    # open the image
+#     im = skimage.io.imread(file)
+#     color = cv2.imread(file, cv2.IMREAD_COLOR)
+    if calibration:
+        file2 = os.path.join("data/train/train_21.jpg")
+        im2 = skimage.io.imread(file2)
+        newimage = e.match_histograms(im, im2, channel_axis=-1)
+        im = newimage
+    try:
+        hull, edges, contours = plot(im)
+        corn = corners(hull, im) - np.tile(np.array([0,100]), (4, 1))
+        intersect_pts = cyclic_intersection_pts(corn)
+
+        width = 4000
+        # List the output points in the same order as input
+        # Top-left, top-right, bottom-right, bottom-left
+        dstPts = [[0, 0], [width, 0], [width, width], [0, width]]
+        # Get the transform
+        m = cv2.getPerspectiveTransform(np.float32(intersect_pts), np.float32(dstPts))
+        # Transform the image
+        out = cv2.warpPerspective(im, m, (int(width), int(width))) #substitute color to im to save pics
+        #return deskewd img
+    except IndexError:
+        try:
+            out = deskew(im, calibration = True)
+        except:
+            out = im[200:3800,1200:4800,:]
+    return out
+
 
 
 class CouldNotFind4PointApprox(Exception):
@@ -328,7 +477,7 @@ def area_partition(out, default = False, reference = None):
 
     fiches = out[beg:end,beg:end,:] 
     
-    return [pl1, pl2, pl3, pl4, table[:,400:-400,:], fiches]
+    return [pl1, pl2, pl3, pl4, table, fiches]
 
 def find_players(h_imgs: List[np.ndarray], imgs: List[np.ndarray],
                  verbose=False):
@@ -337,11 +486,11 @@ def find_players(h_imgs: List[np.ndarray], imgs: List[np.ndarray],
     """
 
     # Find red cards
-    flattened = [img[:2 * img[0].shape[0] // 3].ravel() for img in h_imgs[:4]]
+    flattened = [img.ravel() for img in h_imgs[:4]]
     red_intensity = np.array([(im > 0.93).sum() / np.prod(im.shape[:2]) for im in flattened])
     red_non_players = np.argwhere(red_intensity < 0.1).ravel()
 
-    flattened = [rgb2gray(img)[:2 * img[0].shape[0] // 3].ravel() for img in imgs[:5]]
+    flattened = [rgb2gray(img).ravel() for img in imgs[:5]]
     other_intensity = np.array([img[img > 0.5].sum() / np.prod(len(img)) for img in flattened])
     other_intensity = (other_intensity / other_intensity[4]).round(2)
     other_non_players = np.argwhere(other_intensity[:4] > 0.91)
@@ -404,6 +553,42 @@ class ContourFinder:
                                   (w // 2,          h // 2 + h // 6),
                                   (w // 2,          h // 2 - h // 6)]
         self.h, self.w = h, w
+        self.img_third = None
+        self.centers = None
+
+    def get_table_card_outline(self, plot: bool = True, fig_sup_title: Union[None, str] = None, **kwargs):
+        
+        if plot:
+            fig, axes = plt.subplots(3, 1, figsize=(8, 10))
+            plt.suptitle(fig_sup_title)
+        
+        self.limit_contours_by_length(**kwargs)
+        # self.get_contour_centers()
+
+        if plot:
+            self.plot_contours(axes[0])
+            axes[0].set_title(f'All contours (N = {len(self.contours)})')   
+
+        self.limit_contours_by_third(**kwargs)
+
+        if plot:
+            self.plot_contours(axes[1])
+            axes[1].set_title(f'Contours that cross the lower third (N = {len(self.contours)})')
+
+        self.limit_contours_by_four_point_approx()
+
+        if plot:
+            self.plot_contours(axes[2], approxes=True)
+            axes[2].set_title(f'Contours with decent 4-point approx. (N = {len(self.contours)})')
+
+            plt.tight_layout()
+            plt.savefig('tmp_img.png')
+            plt.close(fig)
+            display(Image(filename='tmp_img.png'))
+            # plt.pause(3)
+            clear_output(wait=True)
+        
+        return self.contours, self.approxes
 
     def get_card_outline(self, plot: bool = True, fig_sup_title: Union[None, str] = None, **kwargs):
         
@@ -423,7 +608,7 @@ class ContourFinder:
             self.plot_contours(axes[1])
             axes[1].set_title(f'Contours that encircle center (N = {len(self.contours)})')
 
-        self.limit_contours_by_four_point_approx(**kwargs)
+        self.limit_contours_by_four_point_approx()
 
         if plot:
             self.plot_contours(axes[2], approxes=True)
@@ -433,6 +618,7 @@ class ContourFinder:
             plt.savefig('tmp_img.png')
             plt.close(fig)
             display(Image(filename='tmp_img.png'))
+            # plt.pause(3)
             clear_output(wait=True)
 
         return self.get_best_contour_and_approx()
@@ -445,15 +631,31 @@ class ContourFinder:
         self.contours = [contour for contour in self.contours
                          if self.contour_encircles(contour, self.img_center_points, **kwargs)]
 
-    def limit_contours_by_four_point_approx(self, **kwargs):
-        self.get_four_point_approxes(**kwargs)
+    def limit_contours_by_third(self, **kwargs):
+        self.contours = [contour for contour in self.contours
+                         if self.contour_crosses_image_third(contour, **kwargs)]
+
+    # def limit_contours_by_center(self, **kwargs):
+    #     for i, contour in enumerate(self.contours):
+    #         for j, center in enumerate(self.centers):
+    #             if j != i:
+    #                 if np.linalg.norm(self.centers[i] - center) < 400:
+    #                     _ = self.contours.pop(i)
+    #                     _ = self.centers.pop(i)
+
+    def limit_contours_by_four_point_approx(self):
+        self.get_four_point_approxes()
         self.contours = [contour for i, contour in enumerate(self.contours)
                          if len(self.approxes[i])]
         self.approxes = [approx for approx in self.approxes if len(approx)]
     
-    def get_four_point_approxes(self, **kwargs):
-        self.approxes = [self.get_four_point_approx(contour, **kwargs)
+    def get_four_point_approxes(self):
+        self.approxes = [self.get_four_point_approx(contour)
                          for contour in self.contours]
+
+    def get_contour_centers(self):
+        self.centers = [self.contour_center(contour)
+                        for contour in self.contours]
 
     def get_best_contour_and_approx(self):
         center = np.array([self.w // 2, self.h // 2])
@@ -463,12 +665,26 @@ class ContourFinder:
         assert len(self.contours) == len(self.approxes)
 
         try:
-            return [self.contours[np.argmin(min_distances)]], [self.approxes[np.argmin(min_distances)]]
+            return self.contours[np.argmin(min_distances)], self.approxes[np.argmin(min_distances)]
         except ValueError:
             return [], []
 
+    def contour_crosses_image_third(self, contour: np.ndarray):
+        self.img_third = 2 * self.h // 3
+        points_above = contour[:, :, 0][contour[:, :, 0] < self.img_third]
+        points_below = contour[:, :, 0][contour[:, :, 0] > self.img_third]
+
+        return len(points_above) and len(points_below)
+
     @staticmethod
-    def contour_has_right_length(contour: np.ndarray, upper_lim: int = 5000, lower_lim: int = 1500):
+    def contour_center(contour: np.ndarray):
+        M = cv2.moments(contour)
+        cX = int(M["m10"] / M["m00"])
+        cY = int(M["m01"] / M["m00"])
+        return (cX, cY)
+
+    @staticmethod
+    def contour_has_right_length(contour: np.ndarray, upper_lim: int = 5000, lower_lim: int = 2000):
         return (len(contour) > lower_lim and len(contour) < upper_lim)
     
     def contour_encircles(self, contour: np.ndarray, points: list, num_points_to_encircle: int = 3):
@@ -479,7 +695,7 @@ class ContourFinder:
         polygon = Polygon([(j, i) for i, j in contour[:, 0]])
         return [polygon.contains(Point(*point)) for point in points]
 
-    def get_four_point_approx(self, contour: np.ndarray, **kwargs) -> np.ndarray:
+    def get_four_point_approx(self, contour: np.ndarray) -> np.ndarray:
 
         for multiple in np.arange(0.003, 0.3, 0.001):
             
@@ -488,32 +704,18 @@ class ContourFinder:
 
             # if desired length, check that the points are good
             if len(approx) == 4:
-                if self.approx_is_correct_shape(approx, **kwargs):
+                if self.approx_is_correct_shape(approx):
                     return approx
 
         return np.array([])
 
-    def approx_is_correct_shape(self, approx, check_short_side: bool = False):
+    def approx_is_correct_shape(self, approx):
         right_points, left_points = separate_left_and_right_points(approx)
         for upper_corner, lower_corner in [right_points, left_points]:
             if not abs(np.linalg.norm(upper_corner.ravel() - lower_corner.ravel()) - 625) < 70:
                 if self.h - 1 in lower_corner.ravel():
                     continue
                 return False
-            
-            if (approx[:, :, 1] == self.w - 1).any():
-                return False
-            
-            if (approx[:, :, 1] == 0).any():
-                return False
-
-            if (approx[:, :, 0] == self.h - 1).any():
-                return False
-
-        if check_short_side:
-            for right, left in zip(right_points, left_points):
-                pass
-            
         return True
 
     def plot_contours(self, ax, approxes: bool = False):
@@ -522,7 +724,14 @@ class ContourFinder:
         for point in self.img_center_points:
             ax.plot(point[0], point[1], c='gray', marker='+', ms=20)
 
+        if self.img_third:
+            ax.axhline(self.img_third, c='gray', ls=':', lw=3)
+
         colors = ['r', 'g', 'b', 'c', 'm', 'y']
+
+        if self.centers:
+            for j, c in enumerate(self.centers):
+                ax.plot(c[1], c[0], marker='P', ms=30, ls='', c=colors[j], mfc='None')
 
         for i, c in enumerate(self.contours):
             j = i % len(colors)
@@ -535,13 +744,13 @@ class ContourFinder:
                 ax.plot(right_points[:, :, 1], right_points[:, :, 0], c=colors[j], ls='', marker='*', ms=30, mfc='None')
                 ax.plot(left_points[:, :, 1], left_points[:, :, 0], c=colors[j], ls='', marker='*', ms=30, mfc='None')
 
-def get_outline(h_img: np.ndarray, k, verbose: bool = False, plot: bool = False) -> Tuple[list, list, list]:
+def get_outline(h_img: np.ndarray, verbose: bool = False, plot: bool = False, table_imgs: bool = False):
     """
     Get the outline of two cards lying on top of one another 
     """
 
     # init loop
-    limit = 0.04
+    limit = 0.06
     try_next_limit = True
 
     while try_next_limit:
@@ -552,21 +761,19 @@ def get_outline(h_img: np.ndarray, k, verbose: bool = False, plot: bool = False)
         # morphology
         hey = binary_erosion(bin_cards, disk(2))
 
-        for i in range(1, min([int(limit * 200), 12])):
+        for i in range(1, min([int(limit * 100), 12])):
             
             contour_finder = ContourFinder(hey)
 
             # get card outline while plotting whats up
-            try:
-                card_outline, approx = contour_finder.get_card_outline(
-                                            fig_sup_title=f'K = {k}, LIMIT = {limit}, AT EROSION #{i}',
-                                            plot=plot
-                )
-            except Exception:
-                continue
+            card_outline, approx = {False: contour_finder.get_card_outline,
+                                    True: contour_finder.get_table_card_outline}[table_imgs](
+                                        fig_sup_title=f'LIMIT = {limit}, AT EROSION #{i}',
+                                        plot=plot
+            )
 
             # if it worked, then break out of both loops
-            if len(card_outline):
+            if (len(card_outline) and not table_imgs) or (table_imgs and (len(card_outline) == 5)):
                 try_next_limit = False
                 break
 
@@ -575,8 +782,8 @@ def get_outline(h_img: np.ndarray, k, verbose: bool = False, plot: bool = False)
         
         limit += 0.01
 
-        if limit > 0.15:
-            return [], [], hey
+        if limit > 0.3:
+            raise Exception
 
     return card_outline, approx, hey
 
@@ -645,29 +852,22 @@ def get_individual_outlines(card_outline: np.ndarray, approx: np.ndarray):
     
     return card_outlines, plot_outlines
 
-def segment_cards(imgs: np.ndarray, k, h_imgs: np.ndarray, make_plot: bool = True, verbose: bool = False):
+def segment_cards(imgs: np.ndarray, h_imgs: np.ndarray, make_plot: bool = True, verbose: bool = False, table_imgs: bool = False):
 
     if not len(imgs):
         make_plot = False
 
     # cut the cards on the left-hand side
     if make_plot:
-        fig, ax = plt.subplots(len(imgs), 3, figsize=(15, len(imgs) * 4))
-        fig.suptitle(k)
+        _, ax = plt.subplots(len(imgs), 2 if table_imgs else 3, figsize=(15, len(imgs) * 4))
         if len(ax.shape) == 1:
             ax = ax[np.newaxis, :]
 
     card_outlines, plot_outlines = [], []
     for j in range(len(imgs)):
         
-        # check whether or not it is a table card
-        table_card = j >= (len(imgs) - 5)
-
         # get card outline
-        card_outline, approx, hey = get_outline(h_imgs[j], k, verbose=verbose, plot=False)
-
-        assert isinstance(card_outline, list)
-        assert isinstance(approx, list)
+        card_outline, approx, hey = get_outline(h_imgs[j], verbose=verbose, plot=False, table_imgs=table_imgs)
 
         if make_plot:
             ax[j, 0].imshow(hey, cmap='gray')
@@ -676,42 +876,31 @@ def segment_cards(imgs: np.ndarray, k, h_imgs: np.ndarray, make_plot: bool = Tru
             # plot contour and polygon
             ax[j, 1].imshow(hey, cmap='gray')
 
-            if len(card_outline):
-                for card, app in zip(card_outline, approx):
-                    ax[j, 1].plot(card[:, :, 1].ravel(), card[:, :, 0].ravel(), 'r-', lw=5)
-                    ax[j, 1].plot(app[:, :, 1], app[:, :, 0], 'c*', ms=30)
+            for card, app in zip(card_outline, approx):
+                ax[j, 1].plot(card[:, :, 1].ravel(), card[:, :, 0].ravel(), 'r-', lw=5)
+                ax[j, 1].plot(app[:, :, 1], app[:, :, 0], 'c*', ms=30)
 
-        if len(card_outline):
-
-            assert len(card_outline) == 1
-            assert len(approx) == 1
-
-            if not table_card:
-                card_outlines_, _ = get_individual_outlines(*card_outline, *approx)
-            else:
-                card_outlines_ = card_outline
-
-            card_outlines += card_outlines_
-
-
+        if not table_imgs:
+            # separate the left and the right points
+            card_outlines_, plot_outlines = get_individual_outlines(card_outline, approx)
         else:
-            card_outlines += [np.array([])] * (1 if table_card else 2)
+            card_outlines_ = copy(card_outline)
+        card_outlines += card_outlines_
 
         # plot
-        if len(card_outline):
-            if make_plot:
+        if make_plot:
+            if not table_imgs:
                 ax[j, 2].imshow(hey, cmap='gray')
-                for outline in card_outlines_:
-                    ax[j, 2].plot(outline[:, :, 1], outline[:, :, 0], '-*c' if not table_card else '-c', ms=30)
-                ax[j, 0].set_ylabel(f'Cards {j}')
+                ax[j, 2].plot(plot_outlines[-1][:, :, 1], plot_outlines[-1][:, :, 0], '*-c', ms=30)
+                ax[j, 2].plot(plot_outlines[-2][:, :, 1], plot_outlines[-2][:, :, 0], '*-c', ms=30)
+            ax[j, 0].set_ylabel(f'Cards {j}')
     
     if make_plot:
+        # set titles
         _ = ax[0, 0].set_title('Use morphology to\nharden the card outline')
-        _ = ax[0, 2].set_title('Use angle between\npoints to get rectangles')
+        if not table_imgs:
+            _ = ax[0, 2].set_title('Use angle between\npoints to get rectangles')
         _ = ax[0, 1].set_title('Get contour and 4-point\npolynomial approximation')
-
-    assert len(card_outlines) == (len(imgs) - 5) * 2 + 5
-    assert all([isinstance(outline, np.ndarray) for outline in card_outlines])
 
     return card_outlines
 
@@ -720,15 +909,11 @@ def get_boxes_and_rectangles(card_outlines: List[np.ndarray]):
     Get a list of boxes and rectangles from a list of card outlines
     """
     boxes, rects = [], []
-    for contour in card_outlines:
-        if len(contour):
-            new_contour = np.roll(contour, 1, axis=2)
-            rects += [cv2.minAreaRect(new_contour)]
-            box = cv2.boxPoints(rects[-1])
-            boxes += [np.int0(box)]
-        else:
-            rects += [np.array([])]
-            boxes += [np.array([])]
+    new_contours = [np.roll(contour, 1, axis=2) for contour in card_outlines]
+    for contour in new_contours:
+        rects += [cv2.minAreaRect(contour)]
+        box = cv2.boxPoints(rects[-1])
+        boxes += [np.int0(box)]
     return boxes, rects
 
 def warp_card(rect: tuple, box: np.ndarray, img: np.ndarray):
@@ -998,7 +1183,7 @@ def load_and_process_full_image(img: Union[int, np.ndarray], make_plot: bool = T
     # match histograms with reference
     # if not (img == im).all():
     #     img = match_histograms(img, im).round().astype(np.uint8)
-    
+        
     # deskew, transform
     img = deskew(img)
     h_ = rgb2hsv(img)
@@ -1016,49 +1201,35 @@ def load_and_process_full_image(img: Union[int, np.ndarray], make_plot: bool = T
 
     return imgs, hsv_imgs
 
-def cut_table_into_imgs(h_table: np.ndarray, table: np.ndarray):
-    w = table.shape[1]
-    lines = np.arange(0, w, w // 6)
-
-    ims = []
-    h_ims = []
-
-    for right_side, left_side in zip(lines[:5], lines[2:]):
-        ims += [
-            table[200:, right_side:left_side, :]
-        ]
-        h_ims += [
-            h_table[200:, right_side:left_side]
-        ]    
-    return h_ims, ims
-
 def get_players_and_imgs(hsv_imgs, all_imgs, make_plot: bool = True, verbose: bool = False,
                          axes: Union[None, np.ndarray] = None):
 
     hh_imgs = [im[:, :, 0] for im in hsv_imgs]
     ss_imgs = [im[:, :, 1] for im in hsv_imgs]
     
-    players, _, _, _, _ = find_players(hh_imgs, all_imgs, verbose=verbose)
-
-    # get table imgs
-    s_table_cards, table_cards = cut_table_into_imgs(ss_imgs[4], all_imgs[4])
+    players, red_int, red_play, blue_int, blue_play = find_players(hh_imgs, all_imgs, verbose=verbose)
 
     if make_plot:
         if not isinstance(axes, np.ndarray):
-            _, axes = plt.subplots(2, len(all_imgs[:4]) + len(table_cards), figsize=(15, 5))
-        for ax_, im_ in zip(axes[0], all_imgs[:4] + table_cards):
+            fig, axes = plt.subplots(2, len(all_imgs), figsize=(15, 5))
+        for i, (ax_, im_) in enumerate(zip(axes[0], all_imgs)):
             ax_.imshow(im_)
             ax_.set_yticks([])
             ax_.set_xticks([])
-        for ax_, im_ in zip(axes[1], ss_imgs[:4] + s_table_cards):
+        for i, (ax_, im_) in enumerate(zip(axes[1], ss_imgs)):
             ax_.imshow(im_)
             ax_.set_yticks([])
             ax_.set_xticks([])
-        axes[0, 3].set_title(f'players = {", ".join([str(p) for p in players])}')
+        axes[0, 3].set_title(f'players = {", ".join([str(p) for p in players])}\n'
+                            #  + f'red players = {", ".join([str(p) for p in red_play])}' +
+                            #  + f'blue players = {", ".join([str(p) for p in blue_play])}\n'
+                             )
 
     return (players,
-            np.array(all_imgs, dtype='object')[players].tolist() + table_cards,
-            np.array(ss_imgs, dtype='object')[players].tolist() + s_table_cards)
+            np.array(all_imgs, dtype='object')[players].tolist(),
+            np.array(ss_imgs, dtype='object')[players].tolist(),
+            all_imgs[4],
+            ss_imgs[4])
 
 class NumberCutter:
     def __init__(self, card_img, h: int = 200, w: int = 120):
@@ -1302,9 +1473,9 @@ def match_number_and_suit(card: np.ndarray, numbers: dict, suits: dict, make_plo
         if match > best_match:
             best_match = match
             best_suit = k
-    
+            
     if best_number in [11, 2]:
-        if (number_im[:25, :10] == 1).sum() > 25 * 10 - 10:
+        if (number_im[:25, :10] == 1).sum() < 10:
             best_number = 11
         else:
             best_number = 2
@@ -1321,32 +1492,21 @@ def match_number_and_suit(card: np.ndarray, numbers: dict, suits: dict, make_plo
     return best_number, best_suit
 
 def get_numbers_and_suits(card_outlines: List[np.ndarray], imgs: List[np.ndarray], real_numbers: dict,
-                          real_suits: dict, make_plot: bool = True):
+                          real_suits: dict, make_plot: bool = True, table_cards: bool = False):
 
     cards = []
     boxes, rects = get_boxes_and_rectangles(card_outlines)
     for i, (rect, box) in enumerate(zip(rects, boxes)):
-
-        num_players = len(imgs) - 5
-        table_card = i >= num_players*2
-
-        if len(box):
-            img = imgs[i - num_players] if table_card else imgs[i // 2]
-            warped = warp_card(rect, box, img)
-            cards += [gaussian(straighten_card(warped))]
-        else:
-            cards += [[]]
+        img = imgs[0] if table_cards else imgs[i // 2]
+        warped = warp_card(rect, box, img)
+        cards += [gaussian(straighten_card(warped))]
 
     numbers, suits = [], []
     for card in cards:
-        if len(card):
-            ax = None
-            if make_plot:
-                fig, ax = plt.subplots(1, 3, figsize=(5, 3))
-            best_number, best_suit = match_number_and_suit(card, real_numbers, real_suits, make_plot, ax)
-        else:
-            best_number = np.random.default_rng().integers(1, 14)
-            best_suit = ['diamond', 'spade', 'heart', 'clover'][np.random.default_rng().integers(0, 4)]
+        ax = None
+        if make_plot:
+            fig, ax = plt.subplots(1, 3, figsize=(5, 3))
+        best_number, best_suit = match_number_and_suit(card, real_numbers, real_suits, make_plot, ax)
         numbers += [best_number]
         suits += [best_suit]
         if make_plot:

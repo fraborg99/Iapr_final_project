@@ -1079,8 +1079,8 @@ class NumberCutter:
         self.upper_points = []
         self.lower_points = []
 
-    def get_right_side_of_number(self, plot: bool = False, ax = None):
-        self.get_starting_points(plot, ax)
+    def get_right_side_of_number(self, starting_point: int = 25, plot: bool = False, ax = None):
+        self.get_starting_points(plot, ax, starting_point=starting_point)
         for _ in range(65):
             if self.lower_points[-1][1] == 150:
                 break
@@ -1206,13 +1206,13 @@ class NumberCutter:
     def slice_is_white(self, padding: int = 0):
         return bool(sum(self.slices[-1]) >= len(self.slices[-1].ravel()) - padding)
 
-    def get_starting_points(self, plot: bool = False, ax = None):
+    def get_starting_points(self, plot: bool = False, ax = None, starting_point: int = 25):
         
         assert ax if plot else True
 
         # get the point in the upper left corner
-        upper_point = [25, self.w - 1]
-        lower_point = [25, self.w - 1]
+        upper_point = [starting_point, self.w - 1]
+        lower_point = [starting_point, self.w - 1]
 
         while self.img[tuple(upper_point)]:
             if (upper_point[0] == 0) or (not self.img[upper_point[0] - 1, upper_point[1]]):
@@ -1282,8 +1282,21 @@ def match_number_and_suit(card: np.ndarray, numbers: dict, suits: dict, make_plo
 
     if make_plot:
         axes[0].imshow(cutter.img, cmap='gray')
-
-    number_im, suit = cutter.get_right_side_of_number(plot=True, ax=axes[0])
+    
+    error = True
+    starting_point = 25
+    while error:
+        try:
+            number_im, suit = cutter.get_right_side_of_number(plot=True, ax=axes[0], starting_point=starting_point)
+            error = False
+        except Exception:
+            if starting_point == 50:
+                starting_point = 15
+            if starting_point == 15:
+                raise IndexError
+            if starting_point == 25:
+                starting_point = 50
+            print('hello')
     
     best_match = 0
     for k, im in numbers.items():
@@ -1343,7 +1356,11 @@ def get_numbers_and_suits(card_outlines: List[np.ndarray], imgs: List[np.ndarray
             ax = None
             if make_plot:
                 fig, ax = plt.subplots(1, 3, figsize=(5, 3))
-            best_number, best_suit = match_number_and_suit(card, real_numbers, real_suits, make_plot, ax)
+            try:
+                best_number, best_suit = match_number_and_suit(card, real_numbers, real_suits, make_plot, ax)
+            except Exception:
+                best_number = np.random.default_rng().integers(1, 14)
+                best_suit = ['diamond', 'spade', 'heart', 'clover'][np.random.default_rng().integers(0, 4)]
         else:
             best_number = np.random.default_rng().integers(1, 14)
             best_suit = ['diamond', 'spade', 'heart', 'clover'][np.random.default_rng().integers(0, 4)]

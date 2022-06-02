@@ -1770,7 +1770,7 @@ def predict(image):
                 continue
         n = new_nums.pop()
         s = new_suits.pop()
-        prediction[k] = str(n) + s
+        prediction[k] = str(n) + s[0].upper()
 
     prediction["CR"] = fiches["red"]
     prediction["CG"] = fiches["green"]

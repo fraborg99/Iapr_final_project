@@ -7,16 +7,16 @@ In this repository you will find:
 - `project.ipynb`: A Jupyter Notebook used to run the actual prediction.
 
 ## List of packages used:
--`time`
--`os`
--`numpy`
--`matplotlib`
--`skimage`
--`scipy`
--`OpenCV`
--`PIL.Image`
--`shapely`
--`treys`
--`termcolor`
--`glob`
--`pandas`
+- `time`
+- `os`
+- `numpy`
+- `matplotlib`
+- `skimage`
+- `scipy`
+- `OpenCV`
+- `PIL.Image`
+- `shapely`
+- `treys`
+- `termcolor`
+- `glob`
+- `pandas`

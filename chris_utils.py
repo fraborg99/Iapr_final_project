@@ -337,11 +337,11 @@ def find_players(h_imgs: List[np.ndarray], imgs: List[np.ndarray],
     """
 
     # Find red cards
-    flattened = [img.ravel() for img in h_imgs[:4]]
+    flattened = [img[:2 * img[0].shape[0] // 3].ravel() for img in h_imgs[:4]]
     red_intensity = np.array([(im > 0.93).sum() / np.prod(im.shape[:2]) for im in flattened])
     red_non_players = np.argwhere(red_intensity < 0.1).ravel()
 
-    flattened = [rgb2gray(img).ravel() for img in imgs[:5]]
+    flattened = [rgb2gray(img)[:2 * img[0].shape[0] // 3].ravel() for img in imgs[:5]]
     other_intensity = np.array([img[img > 0.5].sum() / np.prod(len(img)) for img in flattened])
     other_intensity = (other_intensity / other_intensity[4]).round(2)
     other_non_players = np.argwhere(other_intensity[:4] > 0.91)

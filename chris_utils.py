@@ -407,40 +407,6 @@ class ContourFinder:
         self.img_third = None
         self.centers = None
 
-    def get_table_card_outline(self, plot: bool = True, fig_sup_title: Union[None, str] = None, **kwargs):
-        
-        if plot:
-            fig, axes = plt.subplots(3, 1, figsize=(8, 10))
-            plt.suptitle(fig_sup_title)
-        
-        self.limit_contours_by_length(**kwargs)
-        # self.get_contour_centers()
-
-        if plot:
-            self.plot_contours(axes[0])
-            axes[0].set_title(f'All contours (N = {len(self.contours)})')   
-
-        self.limit_contours_by_third(**kwargs)
-
-        if plot:
-            self.plot_contours(axes[1])
-            axes[1].set_title(f'Contours that cross the lower third (N = {len(self.contours)})')
-
-        self.limit_contours_by_four_point_approx()
-
-        if plot:
-            self.plot_contours(axes[2], approxes=True)
-            axes[2].set_title(f'Contours with decent 4-point approx. (N = {len(self.contours)})')
-
-            plt.tight_layout()
-            plt.savefig('tmp_img.png')
-            plt.close(fig)
-            display(Image(filename='tmp_img.png'))
-            # plt.pause(3)
-            clear_output(wait=True)
-        
-        return self.contours, self.approxes
-
     def get_card_outline(self, plot: bool = True, fig_sup_title: Union[None, str] = None, **kwargs):
         
         if plot:
@@ -1067,38 +1033,49 @@ def load_and_process_full_image(img: Union[int, np.ndarray], make_plot: bool = T
 
     return imgs, hsv_imgs
 
+def cut_table_into_imgs(h_table: np.ndarray, table: np.ndarray):
+    w = table.shape[1]
+    lines = np.arange(0, w, w // 6)
+
+    ims = []
+    h_ims = []
+
+    for right_side, left_side in zip(lines[:5], lines[2:]):
+        ims += [
+            table[:, right_side:left_side, :]
+        ]
+        h_ims += [
+            h_table[:, right_side:left_side]
+        ]    
+    return h_ims, ims
+
 def get_players_and_imgs(hsv_imgs, all_imgs, make_plot: bool = True, verbose: bool = False,
                          axes: Union[None, np.ndarray] = None):
 
     hh_imgs = [im[:, :, 0] for im in hsv_imgs]
     ss_imgs = [im[:, :, 1] for im in hsv_imgs]
     
-    players, red_int, red_play, blue_int, blue_play = find_players(hh_imgs, all_imgs, verbose=verbose)
+    players, _, _, _, _ = find_players(hh_imgs, all_imgs, verbose=verbose)
+
+    # get table imgs
+    s_table_cards, table_cards = cut_table_into_imgs(ss_imgs[4], all_imgs[4])
 
     if make_plot:
         if not isinstance(axes, np.ndarray):
-            fig, axes = plt.subplots(2, len(all_imgs), figsize=(15, 5))
-        for i, (ax_, im_) in enumerate(zip(axes[0], all_imgs)):
-            ax_.imshow(im_)
-            if i == 4:
-                for line in np.arange(0, im_.shape[1], im_.shape[1] // 6)[1:-1]:
-                    ax_.axvline(line, c='gray', ls='--', lw=4)
-            ax_.set_yticks([])
-            ax_.set_xticks([])
-        for i, (ax_, im_) in enumerate(zip(axes[1], ss_imgs)):
+            _, axes = plt.subplots(2, len(all_imgs[:4]) + len(table_cards), figsize=(15, 5))
+        for ax_, im_ in zip(axes[0], all_imgs + table_cards):
             ax_.imshow(im_)
             ax_.set_yticks([])
             ax_.set_xticks([])
-        axes[0, 3].set_title(f'players = {", ".join([str(p) for p in players])}\n'
-                            #  + f'red players = {", ".join([str(p) for p in red_play])}' +
-                            #  + f'blue players = {", ".join([str(p) for p in blue_play])}\n'
-                             )
+        for ax_, im_ in zip(axes[1], ss_imgs + s_table_cards):
+            ax_.imshow(im_)
+            ax_.set_yticks([])
+            ax_.set_xticks([])
+        axes[0, 3].set_title(f'players = {", ".join([str(p) for p in players])}')
 
     return (players,
-            np.array(all_imgs, dtype='object')[players].tolist(),
-            np.array(ss_imgs, dtype='object')[players].tolist(),
-            all_imgs[4],
-            ss_imgs[4])
+            np.array(all_imgs, dtype='object')[players].tolist() + table_cards,
+            np.array(ss_imgs, dtype='object')[players].tolist() + s_table_cards)
 
 class NumberCutter:
     def __init__(self, card_img, h: int = 200, w: int = 120):

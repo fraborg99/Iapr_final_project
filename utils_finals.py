@@ -3,7 +3,7 @@ from turtle import left
 import time
 import pickle
 
-from typing import List, Union
+from typing import List, Union, Tuple
 import os
 from copy import copy
 import numpy as np
@@ -1610,7 +1610,6 @@ def match_number_and_suit(card: np.ndarray, numbers: dict, suits: dict, make_plo
                 raise IndexError
             if starting_point == 25:
                 starting_point = 50
-            print('hello')
     
     best_match = 0
     for k, im in numbers.items():
@@ -1738,10 +1737,12 @@ def predict(image):
     Dictionary with the results.
     """    
     imgs, hsv_imgs = load_and_process_full_image(image, make_plot = False)
-    fiches = count_fiches(hsv_imgs[-1])
+    out = deskew(image)
+    fiches_area = area_partition(deskew(image))[-1]
+    fiches = count_fiches(fiches_area)
 
     players, card_imgs, s_card_imgs = get_players_and_imgs(hsv_imgs, imgs, make_plot=False)
-    card_outlines = segment_cards(card_imgs, s_card_imgs, make_plot=False)
+    card_outlines = segment_cards(card_imgs, "", s_card_imgs, make_plot=False)
     
     with open('numbers.pickle', 'rb') as handle:
         real_numbers = pickle.load(handle)
@@ -1749,7 +1750,9 @@ def predict(image):
     with open('suits.pickle', 'rb') as handle:
         real_suits = pickle.load(handle)
 
-    nums, suits = get_numbers_and_suits(card_outlines, card_imgs, real_numbers, real_suits, make_plot=False)
+    nums, suits = get_numbers_and_suits(card_outlines, card_imgs, real_numbers, real_suits, make_plot=True)
+    print(nums)
+    print(suits)
 
     prediction = {}
     keys = [
@@ -1758,10 +1761,9 @@ def predict(image):
     ]
 
     assert len(nums) == len(suits)
-    assert len(nums) == len(keys)
 
     for key, num, suit in zip(keys, nums, suits):
-        if key.startwith('P') and int(key[1] not in players):
+        if key.startswith('P') and int(key[1]) + 1 not in players:
             prediction[key] = 0
         else:
             str_number = {

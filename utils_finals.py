@@ -1,7 +1,7 @@
 from this import d
 from turtle import left
 import time
-
+import pickle
 
 from typing import List, Union
 import os
@@ -1731,7 +1731,7 @@ def predict(image):
 
     Inputs:
     -------
-    image: numpy array image of shape (h, w)
+    image: numpy array image of shape (h, w, 3)
 
     Ouputs:
     -------
@@ -1739,13 +1739,44 @@ def predict(image):
     """    
     imgs, hsv_imgs = load_and_process_full_image(image, make_plot = False)
     fiches = count_fiches(hsv_imgs[-1])
-    #### Chris' part
+
+    players, card_imgs, s_card_imgs = get_players_and_imgs(hsv_imgs, imgs, make_plot=False)
+    card_outlines = segment_cards(card_imgs, s_card_imgs, make_plot=False)
+    
+    with open('numbers.pickle', 'rb') as handle:
+        real_numbers = pickle.load(handle)
+    
+    with open('suits.pickle', 'rb') as handle:
+        real_suits = pickle.load(handle)
+
+    nums, suits = get_numbers_and_suits(card_outlines, card_imgs, real_numbers, real_suits, make_plot=False)
+
     prediction = {}
+    keys = [
+        'P11', 'P12', 'P21', 'P22', 'P31', 'P32', 'P41', 'P42',
+        'T1', 'T2', 'T3', 'T4', 'T5',
+    ]
+
+    assert len(nums) == len(suits)
+    assert len(nums) == len(keys)
+
+    for key, num, suit in zip(keys, nums, suits):
+        if key.startwith('P') and int(key[1] not in players):
+            prediction_key = 0
+        else:
+            str_number = {
+                1: 'A', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7',
+                8: '8', 9: '9', 10: '10', 11: 'J', 12: 'Q', 13: 'K'
+            }[num]
+            str_suit = suit[0].upper()
+            prediction[key] = str_number + str_suit
+
     prediction["CR"] = fiches["red"]
     prediction["CG"] = fiches["green"]
     prediction["CB"] = fiches["blue"]
     prediction["CK"] = fiches["black"]
     prediction["CW"] = fiches["white"]
+
     return prediction
 
     

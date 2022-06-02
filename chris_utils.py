@@ -541,7 +541,7 @@ def get_outline(h_img: np.ndarray, k, verbose: bool = False, plot: bool = False)
     """
 
     # init loop
-    limit = 0.06
+    limit = 0.04
     try_next_limit = True
 
     while try_next_limit:
@@ -552,7 +552,7 @@ def get_outline(h_img: np.ndarray, k, verbose: bool = False, plot: bool = False)
         # morphology
         hey = binary_erosion(bin_cards, disk(2))
 
-        for i in range(1, min([int(limit * 100), 12])):
+        for i in range(1, min([int(limit * 200), 12])):
             
             contour_finder = ContourFinder(hey)
 
@@ -575,7 +575,7 @@ def get_outline(h_img: np.ndarray, k, verbose: bool = False, plot: bool = False)
         
         limit += 0.01
 
-        if limit > 0.25:
+        if limit > 0.15:
             return [], [], hey
 
     return card_outline, approx, hey
@@ -645,22 +645,29 @@ def get_individual_outlines(card_outline: np.ndarray, approx: np.ndarray):
     
     return card_outlines, plot_outlines
 
-def segment_cards(imgs: np.ndarray, h_imgs: np.ndarray, make_plot: bool = True, verbose: bool = False, table_imgs: bool = False):
+def segment_cards(imgs: np.ndarray, k, h_imgs: np.ndarray, make_plot: bool = True, verbose: bool = False):
 
     if not len(imgs):
         make_plot = False
 
     # cut the cards on the left-hand side
     if make_plot:
-        _, ax = plt.subplots(len(imgs), 2 if table_imgs else 3, figsize=(15, len(imgs) * 4))
+        fig, ax = plt.subplots(len(imgs), 3, figsize=(15, len(imgs) * 4))
+        fig.suptitle(k)
         if len(ax.shape) == 1:
             ax = ax[np.newaxis, :]
 
     card_outlines, plot_outlines = [], []
     for j in range(len(imgs)):
         
+        # check whether or not it is a table card
+        table_card = j >= (len(imgs) - 5)
+
         # get card outline
-        card_outline, approx, hey = get_outline(h_imgs[j], verbose=verbose, plot=False, table_imgs=table_imgs)
+        card_outline, approx, hey = get_outline(h_imgs[j], k, verbose=verbose, plot=False)
+
+        assert isinstance(card_outline, list)
+        assert isinstance(approx, list)
 
         if make_plot:
             ax[j, 0].imshow(hey, cmap='gray')
@@ -670,36 +677,41 @@ def segment_cards(imgs: np.ndarray, h_imgs: np.ndarray, make_plot: bool = True, 
             ax[j, 1].imshow(hey, cmap='gray')
 
             if len(card_outline):
-                for card, app in zip(card_outline if isinstance(card_outline, list) else [card_outline],
-                                     approx if isinstance(approx, list) else [approx]):
+                for card, app in zip(card_outline, approx):
                     ax[j, 1].plot(card[:, :, 1].ravel(), card[:, :, 0].ravel(), 'r-', lw=5)
                     ax[j, 1].plot(app[:, :, 1], app[:, :, 0], 'c*', ms=30)
 
         if len(card_outline):
-            if not table_imgs:
-                # separate the left and the right points
-                card_outlines_, plot_outlines = get_individual_outlines(card_outline, approx)
+
+            assert len(card_outline) == 1
+            assert len(approx) == 1
+
+            if not table_card:
+                card_outlines_, _ = get_individual_outlines(*card_outline, *approx)
             else:
-                card_outlines_ = copy(card_outline)
+                card_outlines_ = card_outline
+
             card_outlines += card_outlines_
+
+
         else:
-            card_outlines += [card_outline] * 2
+            card_outlines += [np.array([])] * (1 if table_card else 2)
 
         # plot
         if len(card_outline):
             if make_plot:
-                if not table_imgs:
-                    ax[j, 2].imshow(hey, cmap='gray')
-                    ax[j, 2].plot(plot_outlines[-1][:, :, 1], plot_outlines[-1][:, :, 0], '*-c', ms=30)
-                    ax[j, 2].plot(plot_outlines[-2][:, :, 1], plot_outlines[-2][:, :, 0], '*-c', ms=30)
+                ax[j, 2].imshow(hey, cmap='gray')
+                for outline in card_outlines_:
+                    ax[j, 2].plot(outline[:, :, 1], outline[:, :, 0], '-*c' if not table_card else '-c', ms=30)
                 ax[j, 0].set_ylabel(f'Cards {j}')
     
     if make_plot:
-        # set titles
         _ = ax[0, 0].set_title('Use morphology to\nharden the card outline')
-        if not table_imgs:
-            _ = ax[0, 2].set_title('Use angle between\npoints to get rectangles')
+        _ = ax[0, 2].set_title('Use angle between\npoints to get rectangles')
         _ = ax[0, 1].set_title('Get contour and 4-point\npolynomial approximation')
+
+    assert len(card_outlines) == (len(imgs) - 5) * 2 + 5
+    assert all([isinstance(outline, np.ndarray) for outline in card_outlines])
 
     return card_outlines
 

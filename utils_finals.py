@@ -1,33 +1,28 @@
 from this import d
 from turtle import left
-import time
-import pickle
-
-from typing import List, Union
+from typing import List, Union, Tuple
 import os
+import time
 from copy import copy
-import numpy as np
-import matplotlib.pyplot as plt
 
+import numpy as np
 from scipy.fft import fft
 from scipy.interpolate import interp1d
-
-import skimage
+import matplotlib.pyplot as plt
 from skimage.transform import rotate, resize
 from skimage.morphology import binary_erosion, dilation, opening, closing, disk, binary_closing
 from skimage.color import rgb2gray, rgb2hsv
 from skimage.filters import median, gaussian
 from skimage.measure import find_contours
 from skimage.exposure import match_histograms
-import skimage.exposure as e
-
 from IPython.display import Image, display, clear_output
-
 import cv2
 import PIL.Image
-
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
+
+from our_utils import deskew
+
 
 def corners(lis, im):
     """
@@ -1359,7 +1354,7 @@ def get_players_and_imgs(hsv_imgs, all_imgs, make_plot: bool = True, verbose: bo
 
     if make_plot:
         if not isinstance(axes, np.ndarray):
-            _, axes = plt.subplots(2, len(all_imgs[:4]) + len(table_cards), figsize=(15, 5))
+            _, axes = plt.subplots(2, len(all_imgs[:4]) + len(table_cards), figsize=(15, 8))
         for ax_, im_ in zip(axes[0], all_imgs[:4] + table_cards):
             ax_.imshow(im_)
             ax_.set_yticks([])

@@ -744,7 +744,7 @@ class ContourFinder:
 
             plt.tight_layout()
             plt.savefig('tmp_img.png')
-            plt.close(fig)
+            plt.close('all')
             display(Image(filename='tmp_img.png'))
             clear_output(wait=True)
 
@@ -1681,7 +1681,7 @@ def get_numbers_and_suits(card_outlines: List[np.ndarray], imgs: List[np.ndarray
         if make_plot:
             plt.tight_layout()
             plt.savefig('tmp_img.png')
-            plt.close(fig)
+            plt.close('all')
             display(Image(filename='tmp_img.png'))
             plt.pause(2)
             clear_output(wait=True)

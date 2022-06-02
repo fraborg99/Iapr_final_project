@@ -1,4 +1,3 @@
-# +
 from this import d
 from turtle import left
 import time
@@ -30,15 +29,27 @@ import PIL.Image
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 
-
-# -
-
-# function to select from an array of points delimiting a shape, those corresponding to the corners
 def corners(lis, im):
+    """
+    Function to select from an array of points delimiting a shape, those corresponding to the corners
+    
+    Inputs:
+    -------
+    lis: list of point delimiting a quadratic shape.
+    im: reference image.
+    
+    Outputs:
+    --------
+    The four corners of the shape
+    """
+    # save the reference image's dimensions
     height = im.shape[0]
     width = im.shape[1]
     n = len(lis)
     corners = []
+    # To detect the corner we consider couples of consecutive points: if the absolute variation in position in two successive 
+    # points is greater along the opposite axis (say x) of what was the axis with the biggest variation for the former two
+    # points (say y), it means we have found a possible corner.
     if np.abs(lis[0][0][1] - lis[1][0][0]) > np.abs(lis[0][0][1] - lis[1][0][0]):
         old_axis = "x"
     else:
@@ -54,6 +65,8 @@ def corners(lis, im):
             continue
     corners = np.array(corners)
 
+    # whenever it happens that you end up with more than 4 points, keep only the two rightmost, the two leftmost, the
+    # two higest and the two lowest points. In this way you end up exaclty with the 4 corners
     while len(corners)>4:
 
         right = list(map(lambda x: x[0] > width//2, corners))
@@ -78,8 +91,18 @@ def corners(lis, im):
 
     return corners
 
-
 def plot(im):
+    """
+    Function to isolate the table from the images.
+    
+    Inputs:
+    -------
+    im: reference image.
+    
+    Outputs:
+    --------
+    The convex hull, the edges and the contours of the table.
+    """    
     ## add some whithe pixels above and below the make the table more recognizable in case of decentered picutres
     im = np.vstack([np.zeros((100,6000,3)), im, np.zeros((100,6000,3))])
     im = im.astype(np.uint8)
@@ -105,7 +128,7 @@ def plot(im):
     image = cv2.erode(image ,kernelder,iterations = 5)
     edges = cv2.Canny(image, 50, 150, apertureSize=3)
 
-    # find the contours and select that one which has points that are both in the lowoer left and upper right corners, it
+    # find the contours and select that one which has points that are both in the lower left and upper right corners, it
     # will be the table's contour
     contours, hierarchy = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     for i in range(len(contours)):
@@ -121,9 +144,18 @@ def plot(im):
 
     return hull, edges, contours
 
-
 def cyclic_intersection_pts(pts):
-#    Sorts 4 points in clockwise direction to enable the rest of the code to stretch the correct dimensions"
+    """
+    Sorts 4 points in clockwise direction to enable the rest of the code to stretch the correct dimensions
+    
+    Inputs:
+    -------
+    pts: points to be sorted.
+    
+    Outputs:
+    --------
+    Points sorted in clockwise direction
+    """
     if pts.shape[0] != 4:
         return None
 
@@ -140,17 +172,28 @@ def cyclic_intersection_pts(pts):
 
     return np.array(cyclic_pts)
 
-
 def deskew(im, calibration = False):
-    # open the image
-#     im = skimage.io.imread(file)
-#     color = cv2.imread(file, cv2.IMREAD_COLOR)
+    """
+    Cut the table portion and deskew the cropped image.
+    
+    Inputs:
+    -------
+    im: image from which to cut the table.
+    calibration: Set to True if you need to calibrate the histogram using a reference train image
+    
+    Outputs:
+    --------
+    Deskewed image
+    """
+    # If calibration set to true, before cropping and deskewing, match the histogram of the current image with that of 
+    # image train_21
     if calibration:
         file2 = os.path.join("data/train/train_21.jpg")
         im2 = skimage.io.imread(file2)
         newimage = e.match_histograms(im, im2, channel_axis=-1)
         im = newimage
     try:
+        # get corners of the table
         hull, edges, contours = plot(im)
         corn = corners(hull, im) - np.tile(np.array([0,100]), (4, 1))
         intersect_pts = cyclic_intersection_pts(corn)
@@ -166,16 +209,137 @@ def deskew(im, calibration = False):
         #return deskewd img
     except IndexError:
         try:
+            # if above doesn't work, try again with the image being recalibrated
             out = deskew(im, calibration = True)
         except:
+            # if still it doesn't work, cut an arbitrary portion from the center of the image
             out = im[200:3800,1200:4800,:]
     return out
 
 
+def count_fiches(fiches):
+    """
+    Count the number of different fiches per color that are on the table.
+    
+    Inputs:
+    -------
+    fiches: Image of the portion of the table containing the fiches, obtained with the function area_partition.
+    
+    Outputs:
+    --------
+    Dictionary containing the number of fiches per color.
+    """
+    # First we convert the fiches image from rgb to hsv
+    fiches_hsv = cv2.cvtColor(fiches, cv2.COLOR_BGR2HSV)    
+    # first we load the mean saturation numpy file to map histograms to is, as you will see
+    mean_saturation = np.load("mean_saturation.npy")
+    # We define the thresholds values for each color, for each color, a part from red, we have two thresholds, one for
+    # those images which mean saturation is close to the mean of the train set and one for those images in which the saturation
+    # is farther than one standard deviation from the mean saturation. For the red color the threshold is just one since, as you
+    # will see, it is processed in a slightly different manner, mapping the hostogram of high saturation pictures to the mean values.
+    # All threshold have been selected with trial and error procedure
+    lower_bounds = {"red": np.array([90, 100, 120]),
+                   "green": [np.array([30, 60, 40]), np.array([23, 180, 60])],
+                   "blue": [np.array([0, 60, 40]), np.array([0, 180, 120])],
+                   "black": [np.array([80, 20, 0]), np.array([0, 80, 0])],
+                   "white": [np.array([70, 30, 115]), np.array([0, 5, 230])]}
+    
+    upper_bounds = {"red": np.array([151, 255,200]),
+                   "green": [np.array([90, 120,100]), np.array([40, 255,220])],
+                   "blue": [np.array([25, 120,100]), np.array([23, 255,220])],
+                   "black": [np.array([120, 80,60]), np.array([85, 180,181])],
+                   "white": [np.array([130, 90, 175]), np.array([20, 60, 270])]}
+    
+    # In the same way we define the sizes of the closing and opening operators
+    kernel_closings = {"red": (40,40),
+                      "green": [(20,20), (20,20)],
+                      "blue": [(20,20), (20,20)],
+                      "black": [(20,20), (20,20)],
+                      "white": [(20,20), (50,50)]}
+    
+    kernel_openings = {"red": (50,50),
+                      "green": [(100,100), (100,100)],
+                      "blue": [(100,100), (100,100)],
+                      "black": [(100,100), (100,100)],
+                      "white": [(100,100), (170,170)]}
+    
+    # Define a reference area of the fiche to be used to determine the number of fiches. the number slightly varies as the
+    # erosive power of the mathematical morphology operations is different for each color
+    fiches_areas = {"red": 57500,
+                    "green": [53000, 53000],
+                    "blue": [53000, 53000],
+                    "black": [50000, 50000],
+                    "white": [48000, 45000]}
+        
+    colors = ["red", "green", "blue", "black", "white"]
+    count = {}
+    for color in colors:
+        if color == "red":
+            # In the case of red color we map the histogram of high saturation images to the mean histogram
+            # 61.57001 and 33.639077 are respectively mean and standard deviation of our train set's saturation
+            if np.abs(np.mean(fiches_hsv[:,:,1]) - 61.57001)> 33.639077:
+                current_hsv = e.match_histograms(fiches_hsv, mean_saturation, channel_axis=-1)
+            else:
+                current_hsv = fiches_hsv
+            
+            # lower bound and upper bound for red color found by trial and error
+            lower_bound = lower_bounds[color] 
+            upper_bound = upper_bounds[color]
+            # filter for closing and opening for the thresholded image
+            kernelcl = np.ones(kernel_closings[color],np.uint8)
+            kernelop = np.ones(kernel_openings[color],np.uint8)
+            
+            ref_area = fiches_areas[color]
+            
+        else: # if not red
+            if (np.mean(fiches_hsv[:,:,1]) - 61.57001)> 33.639077:
+                # in case of non-red color we simply use different thresholds instead of mapping histograms
+                lower_bound = lower_bounds[color][0]
+                upper_bound = upper_bounds[color][0]
+                # filter for closing and opening for the thresholded image
+                kernelcl = np.ones(kernel_closings[color][0],np.uint8)
+                kernelop = np.ones(kernel_openings[color][0],np.uint8)
+                
+                ref_area = fiches_areas[color][0]
+            else:
+                lower_bound = lower_bounds[color][1]
+                upper_bound = upper_bounds[color][1]
+
+                kernelcl = np.ones(kernel_closings[color][1],np.uint8)
+                kernelop = np.ones(kernel_openings[color][1],np.uint8)
+                
+                ref_area = fiches_areas[color][1]
+                
+            current_hsv = fiches_hsv
+                
+        # find the colors within the boundaries
+        mask = cv2.inRange(current_hsv, lower_bound, upper_bound)
+        # closing and opening to remove unwanted noise from the mask
+        mask2 = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernelcl)
+        mask2 = cv2.morphologyEx(mask2, cv2.MORPH_OPEN, kernelop)
+        # Now we detect the edges in the mask we created and we find the contours
+        edges = cv2.Canny(mask2, 10, 10, apertureSize=3)
+        contours, hierarchy = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        area = 0
+        # we sum up the areas of the found contours and chech how many fiches can be contained in that area, using as the
+        # reference area of a fiche the areas defined above
+        for c in contours:
+            area+=cv2.contourArea(c)
+        n = area // ref_area
+        # however if we find that there are more contours than estimated fiches we use the number of contours as result
+        if len(contours)>n:
+            n = len(contours)
+        # Finally, if in the case of red fiches, the number of fiches is too big, it means that there has been some issue,
+        # so we return 0
+        if color == "red":
+            if n > 8:
+                n = 0
+        count[color] = int(n)
+    return count
+
 
 class CouldNotFind4PointApprox(Exception):
     pass
-
 
 def memoize(func):
     cached = {}
@@ -254,7 +418,6 @@ def get_closest_contour(im: np.ndarray, contours: list, verbose: bool = False):
             min_distance = min(distances)
             min_contour_idx = i
     return min_contour_idx
-
 
 def contour_fully_connected(contour: np.ndarray):
     """
@@ -834,7 +997,6 @@ def check_four_point_approx(approx: np.ndarray, verbose: bool = False):
             return False
     return True
 
-
 def get_individual_outlines(card_outline: np.ndarray, approx: np.ndarray):
     """
     Given an outline of overlapping cards and it's four corners, extract
@@ -1039,80 +1201,6 @@ def segment_number_and_suit(warped: np.ndarray, verbose: bool = False):
         """)
 
     return x, x_, y, y_, ys, ys_
-
-# def get_numbers_and_suits(card_outlines: List[np.ndarray], imgs: List[np.ndarray], make_plot: bool = True,
-#                           verbose: bool = False, fig_sup_title: Union[str, None] = None):
-#     """
-#     Given a list of card outlines, semgent the numbers and suits of each outline
-#     """
-#     boxes, rects = get_boxes_and_rectangles(card_outlines)
-
-#     if make_plot:
-#         fig, axes = plt.subplots(5, 8, figsize=(15, 15))
-#         fig.suptitle(fig_sup_title)
-
-#     nums, types, num_signs = [], [], []
-#     for i, (rect, box) in enumerate(zip(rects, boxes)):
-
-#         warped = warp_card(rect, box, imgs[i // 2])
-
-#         if make_plot:
-#             # plot the straightened rectangles
-#             axes[0, i].imshow(warped)
-#             axes[0, i].set_title(f'{warped.shape[1]} X {warped.shape[0]}')
-#             axes[0, i].set_xticks([])
-#             axes[0, i].set_yticks([])
-#             axes[0, 0].set_ylabel("WARPED CARDS\n", fontsize=12)
-
-#         warped = straighten_card(warped)
-
-#         # show the straightened rectangles
-#         if make_plot:
-#             axes[1, i].imshow(warped)
-#             for j in range(1, 3):
-#                 axes[j, i].set_title(f'{warped.shape[1]} X {warped.shape[0]}')
-#                 # axes[j, i].set_xticks([])
-#                 # axes[j, i].set_yticks([])
-#             axes[1, 0].set_ylabel("WARPED AND\nFLIPPED CARDS\n", fontsize=12)
-
-#         x, x_, y, y_, ys, ys_ = segment_number_and_suit(warped, verbose=verbose)
-
-#         edge = min(x, y, 5)
-#         number = warped[y - edge:y + y_ + edge, x - edge:x + x_ + edge, :]
-#         suit = warped[y + y_ + ys - edge:y + y_ + ys + ys_ + edge, x - edge:x + x_ + edge, :]
-
-#         num_signs += [warped]
-#         nums += [number]
-#         types += [suit]
-
-#         if make_plot:
-
-#             # plot the crop lines
-#             axes[2, i].imshow(warped[:150, :150])
-#             axes[2, i].axvline(x=x, c='c')
-#             axes[2, i].axvline(x=x + x_, c='c')
-#             axes[2, i].axhline(y=y, c='m')
-#             axes[2, i].axhline(y=y + y_, c='m')
-#             axes[2, i].axhline(y=y + y_ + ys, c='m')
-#             axes[2, i].axhline(y=y + y_ + ys + ys_, c='m')
-#             axes[2, 0].set_ylabel("CROP LINES FOR\nNUMBER AND SUIT\n", fontsize=12)
-
-#             # crop the numbers and show them
-#             axes[3, i].imshow(nums[-1])
-#             axes[3, i].set_xticks([])
-#             axes[3, i].set_yticks([])
-#             axes[3, i].set_title(f'{nums[-1].shape[1]} X {nums[-1].shape[0]}')
-#             axes[3, 0].set_ylabel("CROPPED NUMBER\n", fontsize=12)
-
-#             # crop the suit and show them
-#             axes[4, i].imshow(types[-1])
-#             axes[4, i].set_xticks([])
-#             axes[4, i].set_yticks([])
-#             axes[4, i].set_title(f'{types[-1].shape[1]} X {types[-1].shape[0]}')
-#             axes[4, 0].set_ylabel("CROPPED SUIT\n", fontsize=12)
-
-#     return nums, types, num_signs
-
 
 def process_cutouts(nums: List[np.ndarray], make_plot: bool = True):
     """
@@ -1444,7 +1532,6 @@ class NumberCutter:
         ax.plot(self.upper_points[arg_lowest_point][1], self.upper_points[arg_lowest_point][0],
                     marker='*', c='g', ms=30, mfc='None')
 
-
 def match_number_and_suit(card: np.ndarray, numbers: dict, suits: dict, make_plot: bool = False, axes = None):
     cutter = NumberCutter(card)
 
@@ -1518,7 +1605,6 @@ def get_numbers_and_suits(card_outlines: List[np.ndarray], imgs: List[np.ndarray
             clear_output(wait=True)
     return numbers, suits
 
-
 def get_table_contours(h_table: np.ndarray, make_plot: bool = False):
 
     # binarize images and perform a closing
@@ -1553,11 +1639,32 @@ def get_table_contours(h_table: np.ndarray, make_plot: bool = False):
             for contour in boxes]
 
 
+def predict(image):
+    """
+    Predict all the required parameters.
+
+    Inputs:
+    -------
+    image: numpy array image of shape (h, w)
+
+    Ouputs:
+    -------
+    Dictionary with the results.
+    """    
+    imgs, hsv_imgs = load_and_process_full_image(image, make_plot = False)
+    fiches = count_fiches(hsv_imgs[-1])
+    #### Chris' part
+    prediction = {}
+    prediction["CR"] = fiches["red"]
+    prediction["CG"] = fiches["green"]
+    prediction["CB"] = fiches["blue"]
+    prediction["CK"] = fiches["black"]
+    prediction["CW"] = fiches["white"]
+    return prediction
 
     
 
     
-
 
 
 

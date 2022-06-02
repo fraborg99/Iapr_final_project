@@ -35,7 +35,7 @@ def memoize(func):
             cached[path_data] = func(path_data)
         return cached[path_data]
     return wrapper
-        
+
 @memoize
 def load_data(path_data: str):
     return {file.split('.jpg')[0]: PIL.Image.open(os.path.join(path_data, file))
@@ -380,7 +380,7 @@ def get_approx(card_outline: np.ndarray, multiple: float):
     card_outline_len = cv2.arcLength(card_outline, True)
     epsilon = multiple * card_outline_len
     return cv2.approxPolyDP(card_outline, epsilon, True)
-    
+
 class ContourFinder:
     def __init__(self, img: np.ndarray):
         self.img = img
@@ -870,7 +870,7 @@ def segment_number_and_suit(warped: np.ndarray, verbose: bool = False):
 #     for i, (rect, box) in enumerate(zip(rects, boxes)):
 
 #         warped = warp_card(rect, box, imgs[i // 2])
-        
+
 #         if make_plot:
 #             # plot the straightened rectangles
 #             axes[0, i].imshow(warped)
@@ -878,9 +878,9 @@ def segment_number_and_suit(warped: np.ndarray, verbose: bool = False):
 #             axes[0, i].set_xticks([])
 #             axes[0, i].set_yticks([])
 #             axes[0, 0].set_ylabel("WARPED CARDS\n", fontsize=12)
-        
+
 #         warped = straighten_card(warped)
-        
+
 #         # show the straightened rectangles
 #         if make_plot:
 #             axes[1, i].imshow(warped)
@@ -889,7 +889,7 @@ def segment_number_and_suit(warped: np.ndarray, verbose: bool = False):
 #                 # axes[j, i].set_xticks([])
 #                 # axes[j, i].set_yticks([])
 #             axes[1, 0].set_ylabel("WARPED AND\nFLIPPED CARDS\n", fontsize=12)
-        
+
 #         x, x_, y, y_, ys, ys_ = segment_number_and_suit(warped, verbose=verbose)
 
 #         edge = min(x, y, 5)
@@ -899,7 +899,7 @@ def segment_number_and_suit(warped: np.ndarray, verbose: bool = False):
 #         num_signs += [warped]
 #         nums += [number]
 #         types += [suit]
-        
+
 #         if make_plot:
 
 #             # plot the crop lines
@@ -925,7 +925,7 @@ def segment_number_and_suit(warped: np.ndarray, verbose: bool = False):
 #             axes[4, i].set_yticks([])
 #             axes[4, i].set_title(f'{types[-1].shape[1]} X {types[-1].shape[0]}')
 #             axes[4, 0].set_ylabel("CROPPED SUIT\n", fontsize=12)
-        
+
 #     return nums, types, num_signs
 
 
@@ -1358,7 +1358,7 @@ def get_numbers_and_suits(card_outlines: List[np.ndarray], imgs: List[np.ndarray
             clear_output(wait=True)
     return numbers, suits
 
-    
+
 def get_table_contours(h_table: np.ndarray, make_plot: bool = False):
 
     # binarize images and perform a closing
@@ -1399,6 +1399,6 @@ def get_table_contours(h_table: np.ndarray, make_plot: bool = False):
     
 
 
-    
 
-    
+
+

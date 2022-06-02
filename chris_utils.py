@@ -1,6 +1,6 @@
 from this import d
 from turtle import left
-from typing import List, Union
+from typing import List, Union, Tuple
 import os
 import time
 from copy import copy
@@ -535,7 +535,7 @@ class ContourFinder:
                 ax.plot(right_points[:, :, 1], right_points[:, :, 0], c=colors[j], ls='', marker='*', ms=30, mfc='None')
                 ax.plot(left_points[:, :, 1], left_points[:, :, 0], c=colors[j], ls='', marker='*', ms=30, mfc='None')
 
-def get_outline(h_img: np.ndarray, verbose: bool = False, plot: bool = False, table_imgs: bool = False):
+def get_outline(h_img: np.ndarray, k, verbose: bool = False, plot: bool = False) -> Tuple[list, list, list]:
     """
     Get the outline of two cards lying on top of one another 
     """
@@ -558,16 +558,15 @@ def get_outline(h_img: np.ndarray, verbose: bool = False, plot: bool = False, ta
 
             # get card outline while plotting whats up
             try:
-                card_outline, approx = {False: contour_finder.get_card_outline,
-                                        True: contour_finder.get_table_card_outline}[table_imgs](
-                                            fig_sup_title=f'LIMIT = {limit}, AT EROSION #{i}',
+                card_outline, approx = contour_finder.get_card_outline(
+                                            fig_sup_title=f'K = {k}, LIMIT = {limit}, AT EROSION #{i}',
                                             plot=plot
                 )
             except Exception:
                 continue
 
             # if it worked, then break out of both loops
-            if (len(card_outline) and not table_imgs) or (table_imgs and (len(card_outline) == 5)):
+            if len(card_outline):
                 try_next_limit = False
                 break
 
@@ -577,7 +576,7 @@ def get_outline(h_img: np.ndarray, verbose: bool = False, plot: bool = False, ta
         limit += 0.01
 
         if limit > 0.25:
-            return np.array([]), np.array([]), hey
+            return [], [], hey
 
     return card_outline, approx, hey
 

@@ -328,7 +328,7 @@ def area_partition(out, default = False, reference = None):
 
     fiches = out[beg:end,beg:end,:] 
     
-    return [pl1, pl2, pl3, pl4, table, fiches]
+    return [pl1, pl2, pl3, pl4, table[:,400:-400,:], fiches]
 
 def find_players(h_imgs: List[np.ndarray], imgs: List[np.ndarray],
                  verbose=False):
@@ -486,14 +486,14 @@ class ContourFinder:
         self.contours = [contour for contour in self.contours
                          if self.contour_crosses_image_third(contour, **kwargs)]
 
-    def limit_contours_by_four_point_approx(self):
-        self.get_four_point_approxes()
+    def limit_contours_by_four_point_approx(self, check_short_side: bool = False):
+        self.get_four_point_approxes(check_short_side)
         self.contours = [contour for i, contour in enumerate(self.contours)
                          if len(self.approxes[i])]
         self.approxes = [approx for approx in self.approxes if len(approx)]
     
-    def get_four_point_approxes(self):
-        self.approxes = [self.get_four_point_approx(contour)
+    def get_four_point_approxes(self, check_short_side: bool = False):
+        self.approxes = [self.get_four_point_approx(contour, check_short_side)
                          for contour in self.contours]
 
     def get_contour_centers(self):
@@ -527,7 +527,7 @@ class ContourFinder:
         return (cX, cY)
 
     @staticmethod
-    def contour_has_right_length(contour: np.ndarray, upper_lim: int = 5000, lower_lim: int = 2000):
+    def contour_has_right_length(contour: np.ndarray, upper_lim: int = 5000, lower_lim: int = 1500):
         return (len(contour) > lower_lim and len(contour) < upper_lim)
     
     def contour_encircles(self, contour: np.ndarray, points: list, num_points_to_encircle: int = 3):
@@ -538,7 +538,7 @@ class ContourFinder:
         polygon = Polygon([(j, i) for i, j in contour[:, 0]])
         return [polygon.contains(Point(*point)) for point in points]
 
-    def get_four_point_approx(self, contour: np.ndarray) -> np.ndarray:
+    def get_four_point_approx(self, contour: np.ndarray, check_short_side: bool = False) -> np.ndarray:
 
         for multiple in np.arange(0.003, 0.3, 0.001):
             
@@ -547,12 +547,12 @@ class ContourFinder:
 
             # if desired length, check that the points are good
             if len(approx) == 4:
-                if self.approx_is_correct_shape(approx):
+                if self.approx_is_correct_shape(approx, check_short_side):
                     return approx
 
         return np.array([])
 
-    def approx_is_correct_shape(self, approx):
+    def approx_is_correct_shape(self, approx, check_short_side: bool = False):
         right_points, left_points = separate_left_and_right_points(approx)
         for upper_corner, lower_corner in [right_points, left_points]:
             if not abs(np.linalg.norm(upper_corner.ravel() - lower_corner.ravel()) - 625) < 70:
@@ -734,7 +734,7 @@ def segment_cards(imgs: np.ndarray, h_imgs: np.ndarray, make_plot: bool = True, 
 
             if len(card_outline):
                 for card, app in zip(card_outline if isinstance(card_outline, list) else [card_outline],
-                                    approx if isinstance(approx, list) else [approx]):
+                                     approx if isinstance(approx, list) else [approx]):
                     ax[j, 1].plot(card[:, :, 1].ravel(), card[:, :, 0].ravel(), 'r-', lw=5)
                     ax[j, 1].plot(app[:, :, 1], app[:, :, 0], 'c*', ms=30)
 
@@ -1080,6 +1080,9 @@ def get_players_and_imgs(hsv_imgs, all_imgs, make_plot: bool = True, verbose: bo
             fig, axes = plt.subplots(2, len(all_imgs), figsize=(15, 5))
         for i, (ax_, im_) in enumerate(zip(axes[0], all_imgs)):
             ax_.imshow(im_)
+            if i == 4:
+                for line in np.arange(0, im_.shape[1], im_.shape[1] // 6)[1:-1]:
+                    ax_.axvline(line, c='gray', ls='--', lw=4)
             ax_.set_yticks([])
             ax_.set_xticks([])
         for i, (ax_, im_) in enumerate(zip(axes[1], ss_imgs)):

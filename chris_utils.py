@@ -404,8 +404,6 @@ class ContourFinder:
                                   (w // 2,          h // 2 + h // 6),
                                   (w // 2,          h // 2 - h // 6)]
         self.h, self.w = h, w
-        self.img_third = None
-        self.centers = None
 
     def get_card_outline(self, plot: bool = True, fig_sup_title: Union[None, str] = None, **kwargs):
         
@@ -425,7 +423,7 @@ class ContourFinder:
             self.plot_contours(axes[1])
             axes[1].set_title(f'Contours that encircle center (N = {len(self.contours)})')
 
-        self.limit_contours_by_four_point_approx()
+        self.limit_contours_by_four_point_approx(**kwargs)
 
         if plot:
             self.plot_contours(axes[2], approxes=True)
@@ -435,7 +433,6 @@ class ContourFinder:
             plt.savefig('tmp_img.png')
             plt.close(fig)
             display(Image(filename='tmp_img.png'))
-            # plt.pause(3)
             clear_output(wait=True)
 
         return self.get_best_contour_and_approx()
@@ -448,23 +445,15 @@ class ContourFinder:
         self.contours = [contour for contour in self.contours
                          if self.contour_encircles(contour, self.img_center_points, **kwargs)]
 
-    def limit_contours_by_third(self, **kwargs):
-        self.contours = [contour for contour in self.contours
-                         if self.contour_crosses_image_third(contour, **kwargs)]
-
-    def limit_contours_by_four_point_approx(self, check_short_side: bool = False):
-        self.get_four_point_approxes(check_short_side)
+    def limit_contours_by_four_point_approx(self, **kwargs):
+        self.get_four_point_approxes(**kwargs)
         self.contours = [contour for i, contour in enumerate(self.contours)
                          if len(self.approxes[i])]
         self.approxes = [approx for approx in self.approxes if len(approx)]
     
-    def get_four_point_approxes(self, check_short_side: bool = False):
-        self.approxes = [self.get_four_point_approx(contour, check_short_side)
+    def get_four_point_approxes(self, **kwargs):
+        self.approxes = [self.get_four_point_approx(contour, **kwargs)
                          for contour in self.contours]
-
-    def get_contour_centers(self):
-        self.centers = [self.contour_center(contour)
-                        for contour in self.contours]
 
     def get_best_contour_and_approx(self):
         center = np.array([self.w // 2, self.h // 2])
@@ -474,23 +463,9 @@ class ContourFinder:
         assert len(self.contours) == len(self.approxes)
 
         try:
-            return self.contours[np.argmin(min_distances)], self.approxes[np.argmin(min_distances)]
+            return [self.contours[np.argmin(min_distances)]], [self.approxes[np.argmin(min_distances)]]
         except ValueError:
             return [], []
-
-    def contour_crosses_image_third(self, contour: np.ndarray):
-        self.img_third = 2 * self.h // 3
-        points_above = contour[:, :, 0][contour[:, :, 0] < self.img_third]
-        points_below = contour[:, :, 0][contour[:, :, 0] > self.img_third]
-
-        return len(points_above) and len(points_below)
-
-    @staticmethod
-    def contour_center(contour: np.ndarray):
-        M = cv2.moments(contour)
-        cX = int(M["m10"] / M["m00"])
-        cY = int(M["m01"] / M["m00"])
-        return (cX, cY)
 
     @staticmethod
     def contour_has_right_length(contour: np.ndarray, upper_lim: int = 5000, lower_lim: int = 1500):
@@ -504,7 +479,7 @@ class ContourFinder:
         polygon = Polygon([(j, i) for i, j in contour[:, 0]])
         return [polygon.contains(Point(*point)) for point in points]
 
-    def get_four_point_approx(self, contour: np.ndarray, check_short_side: bool = False) -> np.ndarray:
+    def get_four_point_approx(self, contour: np.ndarray, **kwargs) -> np.ndarray:
 
         for multiple in np.arange(0.003, 0.3, 0.001):
             
@@ -513,7 +488,7 @@ class ContourFinder:
 
             # if desired length, check that the points are good
             if len(approx) == 4:
-                if self.approx_is_correct_shape(approx, check_short_side):
+                if self.approx_is_correct_shape(approx, **kwargs):
                     return approx
 
         return np.array([])
@@ -535,6 +510,10 @@ class ContourFinder:
             if (approx[:, :, 0] == self.h - 1).any():
                 return False
 
+        if check_short_side:
+            for right, left in zip(right_points, left_points):
+                pass
+            
         return True
 
     def plot_contours(self, ax, approxes: bool = False):
@@ -543,14 +522,7 @@ class ContourFinder:
         for point in self.img_center_points:
             ax.plot(point[0], point[1], c='gray', marker='+', ms=20)
 
-        if self.img_third:
-            ax.axhline(self.img_third, c='gray', ls=':', lw=3)
-
         colors = ['r', 'g', 'b', 'c', 'm', 'y']
-
-        if self.centers:
-            for j, c in enumerate(self.centers):
-                ax.plot(c[1], c[0], marker='P', ms=30, ls='', c=colors[j], mfc='None')
 
         for i, c in enumerate(self.contours):
             j = i % len(colors)
@@ -1042,10 +1014,10 @@ def cut_table_into_imgs(h_table: np.ndarray, table: np.ndarray):
 
     for right_side, left_side in zip(lines[:5], lines[2:]):
         ims += [
-            table[:, right_side:left_side, :]
+            table[200:, right_side:left_side, :]
         ]
         h_ims += [
-            h_table[:, right_side:left_side]
+            h_table[200:, right_side:left_side]
         ]    
     return h_ims, ims
 
@@ -1063,11 +1035,11 @@ def get_players_and_imgs(hsv_imgs, all_imgs, make_plot: bool = True, verbose: bo
     if make_plot:
         if not isinstance(axes, np.ndarray):
             _, axes = plt.subplots(2, len(all_imgs[:4]) + len(table_cards), figsize=(15, 5))
-        for ax_, im_ in zip(axes[0], all_imgs + table_cards):
+        for ax_, im_ in zip(axes[0], all_imgs[:4] + table_cards):
             ax_.imshow(im_)
             ax_.set_yticks([])
             ax_.set_xticks([])
-        for ax_, im_ in zip(axes[1], ss_imgs + s_table_cards):
+        for ax_, im_ in zip(axes[1], ss_imgs[:4] + s_table_cards):
             ax_.imshow(im_)
             ax_.set_yticks([])
             ax_.set_xticks([])

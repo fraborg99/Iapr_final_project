@@ -7,6 +7,7 @@ from typing import List, Union, Tuple
 import os
 import time
 from copy import copy
+import pickle
 
 import numpy as np
 from scipy.fft import fft
@@ -1749,27 +1750,27 @@ def predict(image):
         real_suits = pickle.load(handle)
 
     nums, suits = get_numbers_and_suits(card_outlines, card_imgs, real_numbers, real_suits, make_plot=True)
-    print(nums)
-    print(suits)
 
     prediction = {}
     keys = [
         'P11', 'P12', 'P21', 'P22', 'P31', 'P32', 'P41', 'P42',
-        'T1', 'T2', 'T3', 'T4', 'T5',
+        'T1', 'T2', 'T3', 'T4', 'T5'
     ]
 
     assert len(nums) == len(suits)
 
-    for key, num, suit in zip(keys, nums, suits):
-        if key.startswith('P') and int(key[1]) + 1 not in players:
-            prediction[key] = 0
-        else:
-            str_number = {
-                1: 'A', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7',
-                8: '8', 9: '9', 10: '10', 11: 'J', 12: 'Q', 13: 'K'
-            }[num]
-            str_suit = suit[0].upper()
-            prediction[key] = str_number + str_suit
+    new_nums = nums[::-1]
+    new_suits = suits[::-1]
+
+    for k in keys:
+        if k.startswith('P'):
+            player = int(k[1]) - 1
+            if player not in players:
+                prediction[k] = 0
+                continue
+        n = new_nums.pop()
+        s = new_suits.pop()
+        prediction[k] = str(n) + s
 
     prediction["CR"] = fiches["red"]
     prediction["CG"] = fiches["green"]

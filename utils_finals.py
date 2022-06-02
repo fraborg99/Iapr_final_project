@@ -1178,12 +1178,12 @@ def load_and_process_full_image(img: Union[int, np.ndarray], make_plot: bool = T
         img = np.array(train_images[list(train_images.keys())[img]])
 
     # use the first training image as a reference
-    im = np.array(train_images[list(train_images.keys())[0]])
+    # im = np.array(train_images[list(train_images.keys())[0]])
 
     # match histograms with reference
-    if not (img == im).all():
-        img = match_histograms(img, im).round().astype(np.uint8)
-    
+    # if not (img == im).all():
+    #     img = match_histograms(img, im).round().astype(np.uint8)
+        
     # deskew, transform
     img = deskew(img)
     h_ = rgb2hsv(img)
